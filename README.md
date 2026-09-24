@@ -118,8 +118,6 @@ Model performance will be reported here after Phase 5, compared against a majori
 
 ## Team
 
-### Member 
-
 - Shahad Alotaibi
 - Aryam Almutairi
 - Leen Binmueqal
