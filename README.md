@@ -64,6 +64,7 @@ flowchart LR
 SonicSpark/
 ├── build.sbt                  # Project definition and dependencies
 ├── project/build.properties   # sbt version
+├── AUTHORS                    # Project team and credits
 ├── main/
 │   ├── HelloSpark.scala       # Environment sanity check
 │   ├── common/                # Shared SparkSession builder and file paths
