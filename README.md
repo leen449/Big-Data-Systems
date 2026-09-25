@@ -6,7 +6,6 @@
 ![Spark](https://img.shields.io/badge/Apache%20Spark-3.5-E25A1C?logo=apachespark&logoColor=white)
 ![JDK](https://img.shields.io/badge/JDK-17-007396?logo=openjdk&logoColor=white)
 ![Course](https://img.shields.io/badge/KSU-IT462%20Big%20Data%20Systems-1f5b99)
-![Status](https://img.shields.io/badge/status-Phase%202%3A%20Preprocessing-yellow)
 ![License](https://img.shields.io/badge/code%20license-MIT-green)
 
 ## Overview
