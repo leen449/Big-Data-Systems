@@ -1,3 +1,15 @@
+# local editor metadata
 .metals/
+.bloop/
+.idea/
+
+# dataset and generated outputs
 data/
-data/*
+outputs/
+
+# sbt build artifacts
+target/
+project/target/
+
+# optional logs / caches
+*.log
