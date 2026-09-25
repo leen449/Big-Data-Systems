@@ -61,26 +61,44 @@ flowchart LR
 
 ```
 Big-Data-Systems/
-├── build.sbt                  # Project definition and dependencies
+├── build.sbt                     # Project definition and dependencies
 ├── project/
-│   └── build.properties   # sbt version
-├── AUTHORS                    # Project team and credits
-├── README                     # project readme file   
+│   └── build.properties          # sbt version
+├── AUTHORS.md                    # Project team and credits
+├── README.md                     # Project readme (this file)
+├── HelloSpark.scala              # Environment sanity check (Spark + RDD)
+├── FoundationCheck.scala         # Smoke test: CSV read, Parquet round-trip, metrics
+├── Peek.scala                    # Inspect any stage's Parquet output
 ├── main/
-│   ├── HelloSpark.scala       # Environment sanity check
-│   ├── common/                # Shared SparkSession builder and file paths
-│   ├── preprocessing/         # Phase 2: Cleaning, Integration, Reduction, Transformation
-│   ├── rdd/                   # Phase 3: RDD analyses
-│   ├── sql/                   # Phase 4: Spark SQL queries
-│   └── ml/                    # Phase 5: ML pipeline and evaluation
-├── data/                      # Local data only (git-ignored)
-│   ├── raw/                   # Original Kaggle files
-│   ├── interim/               # Intermediate pipeline outputs (Parquet)
-│   └── processed/             # Final dataset used by all analyses
+│   ├── Explore.scala             # Ad-hoc exploratory analysis of features_3_sec.csv
+│   ├── common/
+│   │   ├── Spark.scala           # Shared SparkSession builder
+│   │   ├── Paths.scala           # Central file path constants
+│   │   ├── Schema.scala          # GTZAN feature table schema
+│   │   ├── DataIO.scala          # CSV/Parquet read and write helpers
+│   │   └── Metrics.scala         # Before/after stats tables, printed and saved as CSV
+│   ├── preprocessing/            # Phase 2
+│   │   ├── Cleaning.scala        # Stage 1: remove silence, flag unrealistic tempo
+│   │   ├── Integration.scala     # Stage 2: link segments to tracks, build tracks table
+│   │   ├── Reduction.scala       # Stage 3: drop constant/redundant/low-relevance features
+│   │   ├── Transformation.scala  # Stage 4: feature engineering, log transform, label encoding
+│   │   └── RunPreprocessing.scala # Runs all four stages in order and prints a summary
+│   ├── rdd/                      # Phase 3: RDD analyses
+│   ├── sql/                      # Phase 4: Spark SQL queries
+│   └── ml/                       # Phase 5: ML pipeline and evaluation
+├── data/                         # Local data only (git-ignored)
+│   ├── raw/                      # Original Kaggle files (CSVs, audio, images)
+│   ├── interim/                  # Intermediate pipeline outputs (Parquet)
+│   │   ├── 01_cleaned/           # Output of Cleaning
+│   │   ├── 02_integrated/        # Output of Integration (segments + track info)
+│   │   ├── 02_tracks/            # One row per song, built during Integration
+│   │   └── 03_reduced/           # Output of Reduction
+│   └── processed/
+│       └── final/                # Output of Transformation; analysis-ready dataset
 ├── outputs/
-│   ├── stats/                 # Before/after statistics
-│   └── figures/               # Charts and visualizations
-└── docs/                      # Project reports
+│   ├── stats/                    # Before/after metrics CSV per stage
+│   └── figures/                  # Charts and visualizations
+└── docs/                         # Project reports
 ```
 
 ## Getting Started
@@ -99,16 +117,44 @@ Big-Data-Systems/
 
 ```bash
 git clone https://github.com/leen449/Big-Data-Systems.git
-cd SonicSpark
+cd Big-Data-Systems
 # place the Kaggle files in data/raw/
+
+# 1. Setup checks
 sbt "runMain sonicspark.HelloSpark"
+sbt "runMain sonicspark.FoundationCheck"
+
+# 2. Full preprocessing pipeline (Cleaning -> Integration -> Reduction -> Transformation)
+sbt "runMain sonicspark.preprocessing.RunPreprocessing"
+
+# 3. Run a single stage on its own
+sbt "runMain sonicspark.preprocessing.Cleaning"
+
+# 4. Inspect a stage's output
+sbt "runMain sonicspark.Peek data/interim/02_integrated"
 ```
 
-Expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100`.
+`HelloSpark` expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100`. `FoundationCheck` verifies both raw CSVs read correctly and survive a Parquet round-trip unchanged.
+
+Every pipeline stage (`Cleaning`, `Integration`, `Reduction`, `Transformation`) writes its output as a **Parquet folder** under `data/interim/` or `data/processed/`, not a CSV. Use `Peek <path>` to inspect the row count, schema, and a sample of any of these folders.
 
 > **Windows users:** Spark requires `winutils.exe` and `hadoop.dll` in `%HADOOP_HOME%\bin`.
 
 ## Results
+
+### Preprocessing summary
+
+| Stage | Rows | Columns |
+|---|---|---|
+| Raw input | 9,990 | 60 |
+| Cleaning | 9,989 | 61 |
+| Integration | 9,989 | 64 |
+| Reduction | 9,989 | 58 |
+| Transformation | 9,989 | 61 |
+
+Source: `outputs/stats/00_pipeline_summary.csv`, generated by `RunPreprocessing`.
+
+### Model performance (pending — Phase 5)
 
 Model performance will be reported here after Phase 5, compared against a majority-class baseline (~10% accuracy on 10 balanced classes).
 
@@ -131,7 +177,8 @@ Model performance will be reported here after Phase 5, compared against a majori
 
 - **Segment leakage.** Each 30-second track is split into ten 3-second segments that sound very similar to each other. If segments from the same track appear in both the training and test sets, accuracy is inflated. All splits in this project are done **by track**, not by segment.
 - **Known GTZAN faults.** Sturm (2013) documented repeated excerpts, mislabelings, and distortions in GTZAN. Results should be read with this in mind.
-- **Row count.** `features_3_sec.csv` contains 9,990 rows instead of 10,000.
+- **Row count.** `features_3_sec.csv` has 9,990 rows instead of 10,000: 10 recordings are slightly shorter than 30 seconds (at most 661,500 samples, vs. 661,794 for a complete track), so their last 3-second segment was never extracted. These rows are kept.
+- **Missing spectrogram image.** `jazz.00054` has an audio file but no spectrogram image — a known GTZAN issue with this recording. Its CSV features are valid and are kept, since the analysis uses the features, not the images.
 
 ## License
 

@@ -22,7 +22,7 @@ lazy val root = (project in file("."))
     ),
 
     // Include the project’s custom source folders (root + main/)
-    Compile / unmanagedSourceDirectories += baseDirectory.value / "main",
+      Compile / unmanagedSourceDirectories += baseDirectory.value / "main",
 
     // Show helpful compiler warnings
     scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
