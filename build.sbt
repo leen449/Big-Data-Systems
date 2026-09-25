@@ -21,6 +21,9 @@ lazy val root = (project in file("."))
       "org.apache.spark" %% "spark-mllib" % sparkVersion
     ),
 
+    // Include the project’s custom source folders (root + main/)
+    Compile / unmanagedSourceDirectories += baseDirectory.value / "main",
+
     // Show helpful compiler warnings
     scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
 
