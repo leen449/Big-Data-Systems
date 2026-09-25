@@ -61,10 +61,12 @@ flowchart LR
 ## Repository Content
 
 ```
-SonicSpark/
+Big-Data-Systems/
 ├── build.sbt                  # Project definition and dependencies
-├── project/build.properties   # sbt version
+├── project/
+│   └── build.properties   # sbt version
 ├── AUTHORS                    # Project team and credits
+├── README                     # project readme file   
 ├── main/
 │   ├── HelloSpark.scala       # Environment sanity check
 │   ├── common/                # Shared SparkSession builder and file paths
@@ -92,7 +94,7 @@ SonicSpark/
 | Scala | 2.12.18 |
 | Apache Spark | 3.5.1 |
 | sbt | 1.10.x |
-| IDE | IntelliJ IDEA + Scala plugin |
+| IDE | Vscode + Scala (Metals) extension|
 
 ### Run
 
