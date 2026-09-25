@@ -1,5 +1,6 @@
 package sonicspark.common
 
+import org.apache.hadoop.fs.{FileSystem, Path => HadoopPath}
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 /**
@@ -37,4 +38,19 @@ object DataIO {
   /** Load the output of a previous stage. */
   def readStage(spark: SparkSession, path: String): DataFrame =
     spark.read.parquet(path)
+
+  /** Save a DataFrame as a single human-readable CSV file (with header), replacing any previous one. */
+  def writeSingleCsv(spark: SparkSession, df: DataFrame, path: String): Unit = {
+    val tmpDir = path + "_tmp"
+    df.coalesce(1).write.mode(SaveMode.Overwrite).option("header", "true").csv(tmpDir)
+
+    val fs      = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+    val tmpPath = new HadoopPath(tmpDir)
+    val part    = fs.listStatus(tmpPath).map(_.getPath).find(_.getName.startsWith("part-")).get
+
+    val dest = new HadoopPath(path)
+    fs.delete(dest, false)
+    fs.rename(part, dest)
+    fs.delete(tmpPath, true)
+  }
 }

@@ -17,6 +17,7 @@ object Paths {
   val Integrated = "data/interim/02_integrated"
   val Reduced    = "data/interim/03_reduced"
   val Final      = "data/processed/final"
+  val FinalCsv   = "data/processed/final.csv"
 
    // ---------- Technical checks ----------
   val SmokeTest = "data/interim/_smoke_test"

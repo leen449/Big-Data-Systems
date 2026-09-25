@@ -66,6 +66,7 @@ object Transformation {
       .select((IdColumns :+ "label_idx") ++ finalFeatures map col: _*)
 
     DataIO.writeStage(finalDf, Paths.Final)
+    DataIO.writeSingleCsv(spark, finalDf, Paths.FinalCsv)
 
     // ---------- Report 1: skewness before/after ----------
     val skewHeader = Seq("feature", "skew_before", "transformation", "skew_after")
@@ -100,6 +101,7 @@ object Transformation {
     Metrics.show(metrics)
     println(s"Metrics saved to: ${Metrics.save(metrics, "04_transformation.csv")}")
     println(s"Final dataset saved to: ${Paths.Final}")
+    println(s"Final dataset (CSV, viewable) saved to: ${Paths.FinalCsv}")
 
     finalDf
   }
