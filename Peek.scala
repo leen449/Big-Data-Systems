@@ -19,7 +19,7 @@ object Peek {
     df.printSchema()
 
     // Small tables: show everything. Wide tables: show the key columns only.
-    val keyCols = Seq("filename", "track_id", "segment_index", "label",
+    val keyCols = Seq("filename", "track_id", "window_idx", "start_sec", "segment_idx", "label",
                       "tempo", "track_tempo", "tempo_in_range").filter(df.columns.contains)
     val shown = if (df.columns.length <= 10) df.columns.toSeq else keyCols
 

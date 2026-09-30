@@ -12,7 +12,11 @@ object Paths {
   val AudioDir  = "data/raw/genres_original"
   val ImagesDir = "data/raw/images_original"
 
+  // ---------- Small local subset for testing extraction before a full run ----------
+  val SampleAudioDir = "data/sample"
+
   // ---------- Pipeline outputs (one per preprocessing step) ----------
+  val WindowFeatures = "data/interim/00_window_features"  // output of AudioFeatures extraction
   val Cleaned    = "data/interim/01_cleaned"
   val Integrated = "data/interim/02_integrated"
   val Reduced    = "data/interim/03_reduced"

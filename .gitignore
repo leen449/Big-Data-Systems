@@ -13,3 +13,6 @@ project/target/
 
 # optional logs / caches
 *.log
+
+#claude
+claude.md

@@ -34,4 +34,21 @@ object Schema {
     featureColumns.map(c => StructField(c, DoubleType)) ++
     Seq(StructField("label", StringType))
   )
+
+  // ---------- window_features (extracted from raw audio; see AudioFeatures.scala) ----------
+
+  /** Paired mean/var time-domain and spectral features extracted per window. */
+  private val windowPairedFeatures: Seq[String] = Seq(
+    "rms", "zcr", "spectral_centroid", "spectral_bandwidth", "rolloff", "flatness"
+  ).flatMap(f => Seq(s"${f}_mean", s"${f}_var"))
+
+  /** MFCC 1..AudioConfig.NumMfcc, each as a mean/variance pair. */
+  private val windowMfccFeatures: Seq[String] =
+    (1 to AudioConfig.NumMfcc).flatMap(i => Seq(s"mfcc${i}_mean", s"mfcc${i}_var"))
+
+  /** All 38 window-level audio features, in column order (see CLAUDE.md). */
+  val windowFeatureColumns: Seq[String] = windowPairedFeatures ++ windowMfccFeatures
+
+  /** Identity columns of the window_features table, preceding the feature columns. */
+  val windowIdColumns: Seq[String] = Seq("track_id", "label", "window_idx", "start_sec")
 }

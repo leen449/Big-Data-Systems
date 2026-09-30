@@ -7,19 +7,19 @@ import sonicspark.common._
 /**
  * Stage 1 of the preprocessing pipeline: CLEANING
  *
- * Input : data/raw/features_3_sec.csv
+ * Input : data/interim/00_window_features (see AudioFeatures.scala)
  * Output: data/interim/01_cleaned
  *         outputs/stats/01_cleaning.csv
  *
  * Other quality checks (nulls, duplicates, label consistency, negative variances)
- * were verified during exploration and required no action.
+ * were verified during exploration and required no action. Unlike the earlier
+ * CSV-based version of this stage, there is no tempo to sanity-check: tempo is
+ * not extracted from the raw audio (see CLAUDE.md).
  */
 object Cleaning {
 
   val Stage               = "cleaning"
   val SilenceRmsThreshold = 0.001  // ≈ -60 dBFS: effectively silence
-  val TempoMin            = 40.0   // slowest realistic musical tempo (BPM)
-  val TempoMax            = 240.0  // fastest realistic musical tempo (BPM)
 
   def main(args: Array[String]): Unit = {
     val spark = Spark.session("SonicSpark-Cleaning")
@@ -28,36 +28,30 @@ object Cleaning {
   }
 
   def run(spark: SparkSession): DataFrame = {
-    val raw = DataIO.readFeaturesCsv(spark, Paths.Raw3Sec).cache()
+    val raw = DataIO.readStage(spark, Paths.WindowFeatures).cache()
 
-    // ---------- Rule 1: remove silent segments ----------
+    // ---------- Rule 1: remove silent windows ----------
     val isSilent = col("rms_mean") < SilenceRmsThreshold
 
-    println("\n=== Silent segments removed ===")
-    raw.filter(isSilent).select("filename", "label", "rms_mean").show(truncate = false)
+    println("\n=== Silent windows removed ===")
+    raw.filter(isSilent).select("track_id", "window_idx", "label", "rms_mean").show(truncate = false)
 
-    // ---------- Rule 2: flag unrealistic tempo ----------
-    val clean = raw
-      .filter(!isSilent)
-      .withColumn("tempo_in_range", col("tempo").between(TempoMin, TempoMax))
-      .cache()
+    val clean = raw.filter(!isSilent).cache()
 
     DataIO.writeStage(clean, Paths.Cleaned)
 
     // ---------- Metrics for the report ----------
     val rawRows   = raw.count()
     val cleanRows = clean.count()
-    val tempoOut  = clean.filter(!col("tempo_in_range")).count()
     val before    = genreCounts(raw)
     val after     = genreCounts(clean)
 
     val metrics = Seq(
       Metric(Stage, "rows", rawRows.toString, cleanRows.toString),
-      Metric(Stage, "columns", raw.columns.length.toString, clean.columns.length.toString, "+ tempo_in_range"),
-      Metric(Stage, "silent segments", (rawRows - cleanRows).toString, "0", s"rms_mean < $SilenceRmsThreshold removed"),
-      Metric(Stage, s"tempo outside $TempoMin-$TempoMax BPM", tempoOut.toString, tempoOut.toString, "kept, flagged")
+      Metric(Stage, "columns", raw.columns.length.toString, clean.columns.length.toString),
+      Metric(Stage, "silent windows", (rawRows - cleanRows).toString, "0", s"rms_mean < $SilenceRmsThreshold removed")
     ) ++ before.keys.toSeq.sorted.map { g =>
-      Metric(Stage, s"segments: $g", before(g).toString, after.getOrElse(g, 0L).toString)
+      Metric(Stage, s"windows: $g", before(g).toString, after.getOrElse(g, 0L).toString)
     }
 
     println("\n=== Cleaning summary ===")

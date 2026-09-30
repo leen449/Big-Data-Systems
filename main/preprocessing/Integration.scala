@@ -8,17 +8,27 @@ import sonicspark.common._
 /**
  * Stage 2 of the preprocessing pipeline: INTEGRATION
  *
- * Connects each 3-second segment to the song (track) it belongs to.
+ * Connects each window to the song (track) it belongs to, and computes the
+ * 3-second segment it falls in (segment_idx = floor(start_sec / 3), per
+ * CLAUDE.md) so later stages or ad-hoc checks can join back to
+ * features_3_sec.csv. track_id is already a column on every window (set
+ * during audio extraction), so unlike the CSV-based version of this stage,
+ * no filename parsing is needed to find it.
  *
- * Output 1: data/interim/02_integrated  -> segments + track_id, segment_index, track_tempo
- * Output 2: data/interim/02_tracks      -> one row per song (for SQL joins and track-level splits)
+ * Output 1: data/interim/02_integrated -> windows + segment_idx, track_length
+ * Output 2: data/interim/02_tracks     -> one row per song (for SQL joins and track-level splits)
  * Metrics : outputs/stats/02_integration.csv
  */
 object Integration {
 
-  val Stage         = "integration"
-  val SegmentLength = 66149                    // samples per 3-second segment
-  val TrackIdRegex  = "^([a-z]+\\.\\d{5})"     // "blues.00000.3.wav" -> "blues.00000"
+  val Stage = "integration"
+
+  // A track needs at least this many samples to produce a full 59 windows
+  // (see AudioFeatures.windowTrack: WindowSize + 58 hops).
+  val MinSamplesForFullTrack: Long = AudioConfig.WindowSize + 58L * AudioConfig.WindowHop
+  val ExpectedWindowsPerTrack      = 59
+
+  val TrackIdRegex = "^([a-z]+\\.\\d{5})"  // parses features_30_sec.csv's own filenames only
 
   def main(args: Array[String]): Unit = {
     val spark = Spark.session("SonicSpark-Integration")
@@ -28,48 +38,46 @@ object Integration {
 
   def run(spark: SparkSession): DataFrame = {
 
-    // ---------- 1. Segments: add the keys ----------
-    val segments = DataIO.readStage(spark, Paths.Cleaned)
-      .withColumn("track_id", regexp_extract(col("filename"), TrackIdRegex, 1))
-      .withColumn("segment_index", regexp_extract(col("filename"), "\\.(\\d+)\\.wav$", 1).cast("int"))
+    // ---------- 1. Windows: add the 3-second segment key ----------
+    val windows = DataIO.readStage(spark, Paths.Cleaned)
+      .withColumn("segment_idx", floor(col("start_sec") / 3).cast("int"))
 
     // ---------- 2. Build the tracks table (one row per song) ----------
     val songInfo = DataIO.readFeaturesCsv(spark, Paths.Raw30Sec).select(
       regexp_extract(col("filename"), TrackIdRegex, 1).as("track_id"),
       col("label"),
-      col("length").as("track_length"),
-      col("tempo").as("track_tempo")
+      col("length").as("track_length")
     )
-    val segmentCounts = segments.groupBy("track_id").agg(count("*").as("num_segments"))
+    val windowCounts = windows.groupBy("track_id").agg(count("*").as("num_windows"))
     val audioFiles    = listTrackIds(spark, Paths.AudioDir, ".wav").withColumn("has_audio", lit(true))
     val imageFiles    = listTrackIds(spark, Paths.ImagesDir, ".png").withColumn("has_image", lit(true))
 
     val tracks = songInfo
-      .join(segmentCounts, Seq("track_id"), "left")
+      .join(windowCounts, Seq("track_id"), "left")
       .join(audioFiles, Seq("track_id"), "left")
       .join(imageFiles, Seq("track_id"), "left")
-      .na.fill(0L, Seq("num_segments"))
+      .na.fill(0L, Seq("num_windows"))
       .na.fill(false, Seq("has_audio", "has_image"))
       .cache()
 
-    // ---------- 3. Enrich segments with song-level tempo ----------
-    val joined = segments
-      .join(tracks.select(col("track_id"), col("track_tempo"), col("label").as("track_label")),
+    // ---------- 3. Enrich windows with the song's length ----------
+    val joined = windows
+      .join(tracks.select(col("track_id"), col("track_length"), col("label").as("track_label")),
         Seq("track_id"), "left")
       .cache()
 
     val unmatched = joined.filter(col("track_label").isNull).count()
     val conflicts = joined.filter(col("track_label") =!= col("label")).count()
-    val integrated = joined.drop("track_label")   // label conflicts: segment label kept
+    val integrated = joined.drop("track_label")   // label conflicts: window label kept
 
     // ---------- Save both outputs ----------
     DataIO.writeStage(integrated, Paths.Integrated)
     DataIO.writeStage(tracks, Paths.Tracks)
 
     // ---------- Report ----------
-    println("\n=== Songs with fewer than 10 segments ===")
-    tracks.filter(col("num_segments") < 10)
-      .select("track_id", "num_segments", "track_length")
+    println(s"\n=== Songs with fewer than $ExpectedWindowsPerTrack windows ===")
+    tracks.filter(col("num_windows") < ExpectedWindowsPerTrack)
+      .select("track_id", "num_windows", "track_length")
       .orderBy("track_id")
       .show(20, truncate = false)
 
@@ -79,14 +87,15 @@ object Integration {
       .show(truncate = false)
 
     val metrics = Seq(
-      Metric(Stage, "segment rows", segments.count().toString, integrated.count().toString, "left join keeps all segments"),
-      Metric(Stage, "segment columns", "61", integrated.columns.length.toString, "+ track_id, segment_index, track_tempo"),
+      Metric(Stage, "window rows", windows.count().toString, integrated.count().toString, "left join keeps all windows"),
+      Metric(Stage, "window columns", windows.columns.length.toString, integrated.columns.length.toString, "+ track_length"),
       Metric(Stage, "tracks table rows", "-", tracks.count().toString, "one row per song"),
-      Metric(Stage, "segments without matching song", "-", unmatched.toString),
-      Metric(Stage, "label conflicts (segment vs song)", "-", conflicts.toString, "segment label kept"),
-      Metric(Stage, "songs with < 10 segments", "-", tracks.filter(col("num_segments") < 10).count().toString),
-      Metric(Stage, s"songs shorter than ${SegmentLength * 10} samples", "-",
-        tracks.filter(col("track_length") < SegmentLength * 10).count().toString, "explains missing segments"),
+      Metric(Stage, "windows without matching song", "-", unmatched.toString),
+      Metric(Stage, "label conflicts (window vs song)", "-", conflicts.toString, "window label kept"),
+      Metric(Stage, s"songs with < $ExpectedWindowsPerTrack windows", "-",
+        tracks.filter(col("num_windows") < ExpectedWindowsPerTrack).count().toString),
+      Metric(Stage, s"songs shorter than $MinSamplesForFullTrack samples", "-",
+        tracks.filter(col("track_length") < MinSamplesForFullTrack).count().toString, "explains fewer windows"),
       Metric(Stage, "songs without audio file", "-", tracks.filter(!col("has_audio")).count().toString),
       Metric(Stage, "songs without spectrogram image", "-", tracks.filter(!col("has_image")).count().toString)
     )

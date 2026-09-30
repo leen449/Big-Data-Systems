@@ -22,7 +22,7 @@ object Transformation {
   val Stage         = "transformation"
   val SkewThreshold = 1.0   // T2: log-transform features more skewed than this
   val LogEpsilon    = 1e-6  // T2: avoids log(0); negligible next to typical values
-  val IdColumns     = Seq("track_id", "segment_index", "label")
+  val IdColumns     = Schema.windowIdColumns
 
   def main(args: Array[String]): Unit = {
     val spark = Spark.session("SonicSpark-Transformation")
@@ -36,7 +36,6 @@ object Transformation {
 
     // ---------- T1: feature engineering ----------
     val engineered = reduced
-      .withColumn("harmonic_percussive_ratio", col("harmony_var") / (col("perceptr_var") + LogEpsilon))
       .withColumn("loudness_variation", sqrt(col("rms_var")) / col("rms_mean"))
       .cache()
 
@@ -90,8 +89,8 @@ object Transformation {
     val metrics = Seq(
       Metric(Stage, "rows", rows.toString, finalDf.count().toString),
       Metric(Stage, "columns", reduced.columns.length.toString, finalDf.columns.length.toString,
-        "+ 2 engineered features + label_idx"),
-      Metric(Stage, "T1 engineered features", "-", "2", "harmonic_percussive_ratio loudness_variation"),
+        "+ 1 engineered feature + label_idx"),
+      Metric(Stage, "T1 engineered features", "-", "1", "loudness_variation"),
       Metric(Stage, "T2 log-transformed features", "-", toLog.size.toString, s"skewness > $SkewThreshold"),
       Metric(Stage, "features with |skewness| > 1", skewedBefore.toString, skewedAfter.toString),
       Metric(Stage, "T3 label encoding", "10 genres", "label_idx 0-9", "alphabetical"),

@@ -31,8 +31,10 @@ lazy val root = (project in file("."))
     fork := true,
     outputStrategy := Some(StdoutOutput),
 
-    // Memory limit for Spark (2 GB is enough for GTZAN; lower to 1g on small laptops)
-    run / javaOptions += "-Xmx2g",
+    // Memory limit for Spark. Audio feature extraction over the full 1,000-file
+    // corpus needs more headroom than the CSV-based stages; lower to 2g if this
+    // machine doesn't have it free.
+    run / javaOptions += "-Xmx3g",
 
     // Required for Spark 3.5 to run on Java 17
     run / javaOptions ++= Seq(

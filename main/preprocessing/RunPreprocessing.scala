@@ -5,7 +5,11 @@ import sonicspark.common._
 
 /**
  * Runs the full preprocessing pipeline in order:
- *   raw CSV -> Cleaning -> Integration -> Reduction -> Transformation -> final dataset
+ *   window_features -> Cleaning -> Integration -> Reduction -> Transformation -> final dataset
+ *
+ * Assumes AudioFeatures has already been run on the full corpus and written
+ * data/interim/00_window_features (that stage takes about an hour, so it is
+ * not re-run here on every pipeline execution).
  *
  *   sbt "runMain sonicspark.preprocessing.RunPreprocessing"
  */
@@ -15,7 +19,7 @@ object RunPreprocessing {
     val spark = Spark.session("SonicSpark-Preprocessing")
     val start = System.nanoTime()
 
-    val raw = DataIO.readFeaturesCsv(spark, Paths.Raw3Sec)
+    val raw = DataIO.readStage(spark, Paths.WindowFeatures)
 
     val stages: Seq[(String, () => DataFrame)] = Seq(
       "cleaning"       -> (() => Cleaning.run(spark)),

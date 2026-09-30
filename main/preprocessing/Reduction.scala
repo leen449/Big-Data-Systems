@@ -14,12 +14,17 @@ import sonicspark.common._
  * Output: data/interim/03_reduced
  *         outputs/stats/03_reduction.csv          (before/after metrics)
  *         outputs/stats/03_feature_relevance.csv  (every feature, its eta², and the decision)
+ *
+ * Unlike the earlier CSV-based version of this stage, there are no structural
+ * columns to drop first (no constant 'length', no filename identifier, no
+ * unreliable 'tempo'): window_features never carried any of those, so every
+ * one of the 38 window features is a genuine candidate from the start.
  */
 object Reduction {
 
   val Stage   = "reduction"
-  val MinEta2 = 0.01  // R4: below this, genre explains < 1% of a feature's variation
-  val MaxCorr = 0.95  // R5: above this, two features carry the same information
+  val MinEta2 = 0.01  // R1: below this, genre explains < 1% of a feature's variation
+  val MaxCorr = 0.95  // R2: above this, two features carry the same information
 
   def main(args: Array[String]): Unit = {
     val spark = Spark.session("SonicSpark-Reduction")
@@ -31,20 +36,14 @@ object Reduction {
     val df   = DataIO.readStage(spark, Paths.Integrated).cache()
     val rows = df.count()
 
-    // ---------- R1–R3: structural drops ----------
-    val lengthValues = df.select("length").distinct().count()
-    require(lengthValues == 1, s"'length' has $lengthValues distinct values; review rule R1")
-    val tempoCorr = df.stat.corr("tempo", "track_tempo")
+    val candidates = Schema.windowFeatureColumns
 
-    // Audio features considered from here on: segment tempo replaced by track tempo
-    val candidates = Schema.featureColumns.filterNot(_ == "tempo") :+ "track_tempo"
-
-    // ---------- R4: relevance (eta squared) ----------
+    // ---------- R1: relevance (eta squared) ----------
     val eta2         = etaSquared(df, candidates, rows)
     val lowRelevance = candidates.filter(c => eta2(c) < MinEta2)
     val relevant     = candidates.filterNot(lowRelevance.contains)
 
-    // ---------- R5: redundancy (correlation) ----------
+    // ---------- R2: redundancy (correlation) ----------
     val pairs     = correlatedPairs(df, relevant)
     val redundant = scala.collection.mutable.LinkedHashMap[String, (String, Double)]()
     pairs.sortBy(p => -math.abs(p._3)).foreach { case (a, b, r) =>
@@ -56,7 +55,7 @@ object Reduction {
     val kept = relevant.filterNot(redundant.contains)
 
     // ---------- Output: identifiers + label + kept features ----------
-    val reduced = df.select((Seq("track_id", "segment_index", "label") ++ kept).map(col): _*)
+    val reduced = df.select((Schema.windowIdColumns ++ kept).map(col): _*)
     DataIO.writeStage(reduced, Paths.Reduced)
 
     // ---------- Report 1: feature relevance ranking ----------
@@ -78,12 +77,8 @@ object Reduction {
     val metrics = Seq(
       Metric(Stage, "rows", rows.toString, rows.toString, "no sampling: data fits in memory"),
       Metric(Stage, "columns", df.columns.length.toString, reduced.columns.length.toString),
-      Metric(Stage, "R1 dropped: constant", "length", "-", "1 distinct value"),
-      Metric(Stage, "R2 dropped: identifier", "filename", "-", "replaced by track_id + segment_index"),
-      Metric(Stage, "R3 dropped: unreliable", "tempo tempo_in_range", "-",
-        f"replaced by track_tempo (correlation $tempoCorr%.2f)"),
-      Metric(Stage, s"R4 dropped: eta2 < $MinEta2", lowRelevance.size.toString, "-", lowRelevance.mkString(" ")),
-      Metric(Stage, s"R5 dropped: |r| > $MaxCorr", redundant.size.toString, "-", redundant.keys.mkString(" ")),
+      Metric(Stage, s"R1 dropped: eta2 < $MinEta2", lowRelevance.size.toString, "-", lowRelevance.mkString(" ")),
+      Metric(Stage, s"R2 dropped: |r| > $MaxCorr", redundant.size.toString, "-", redundant.keys.mkString(" ")),
       Metric(Stage, "audio features", candidates.size.toString, kept.size.toString)
     )
     println("\n=== Reduction summary ===")
