@@ -48,16 +48,24 @@ object Integration {
       col("label"),
       col("length").as("track_length")
     )
-    val windowCounts = windows.groupBy("track_id").agg(count("*").as("num_windows"))
-    val audioFiles    = listTrackIds(spark, Paths.AudioDir, ".wav").withColumn("has_audio", lit(true))
-    val imageFiles    = listTrackIds(spark, Paths.ImagesDir, ".png").withColumn("has_image", lit(true))
+    // Raw (pre-Cleaning) counts come from window_features directly, not from the
+    // already-cleaned windows above: a track can have fewer windows than expected
+    // for two unrelated reasons -- a genuinely short recording (fewer raw windows
+    // to begin with), or the silence rule in Cleaning trimming some away -- and
+    // telling those apart requires both counts.
+    val rawCounts   = DataIO.readStage(spark, Paths.WindowFeatures).groupBy("track_id").agg(count("*").as("num_raw_windows"))
+    val cleanCounts = windows.groupBy("track_id").agg(count("*").as("num_windows"))
+    val audioFiles  = listTrackIds(spark, Paths.AudioDir, ".wav").withColumn("has_audio", lit(true))
+    val imageFiles  = listTrackIds(spark, Paths.ImagesDir, ".png").withColumn("has_image", lit(true))
 
     val tracks = songInfo
-      .join(windowCounts, Seq("track_id"), "left")
+      .join(rawCounts, Seq("track_id"), "left")
+      .join(cleanCounts, Seq("track_id"), "left")
       .join(audioFiles, Seq("track_id"), "left")
       .join(imageFiles, Seq("track_id"), "left")
-      .na.fill(0L, Seq("num_windows"))
+      .na.fill(0L, Seq("num_raw_windows", "num_windows"))
       .na.fill(false, Seq("has_audio", "has_image"))
+      .withColumn("windows_removed_by_cleaning", col("num_raw_windows") - col("num_windows"))
       .cache()
 
     // ---------- 3. Enrich windows with the song's length ----------
@@ -75,9 +83,24 @@ object Integration {
     DataIO.writeStage(tracks, Paths.Tracks)
 
     // ---------- Report ----------
-    println(s"\n=== Songs with fewer than $ExpectedWindowsPerTrack windows ===")
-    tracks.filter(col("num_windows") < ExpectedWindowsPerTrack)
-      .select("track_id", "num_windows", "track_length")
+    // Two unrelated reasons a track can end up with fewer than 59 windows:
+    // (1) it was genuinely short to begin with (fewer raw windows), or
+    // (2) Cleaning's silence rule trimmed windows off an otherwise full track.
+    // A track with track_length >= MinSamplesForFullTrack cannot be case (1) --
+    // e.g. a corrupt/unreadable file (num_raw_windows = 0) with a normal-looking
+    // CSV length is neither: it belongs to neither bucket, which is correct.
+    val shortRecordings = tracks.filter(col("track_length") < MinSamplesForFullTrack)
+    val silenceTrimmed  = tracks.filter(col("windows_removed_by_cleaning") > 0)
+
+    println(s"\n=== Short recordings (track_length < $MinSamplesForFullTrack samples) ===")
+    shortRecordings
+      .select("track_id", "track_length", "num_raw_windows")
+      .orderBy("track_id")
+      .show(20, truncate = false)
+
+    println("=== Tracks that lost windows to Cleaning's silence rule ===")
+    silenceTrimmed
+      .select("track_id", "num_raw_windows", "num_windows", "windows_removed_by_cleaning")
       .orderBy("track_id")
       .show(20, truncate = false)
 
@@ -92,10 +115,10 @@ object Integration {
       Metric(Stage, "tracks table rows", "-", tracks.count().toString, "one row per song"),
       Metric(Stage, "windows without matching song", "-", unmatched.toString),
       Metric(Stage, "label conflicts (window vs song)", "-", conflicts.toString, "window label kept"),
-      Metric(Stage, s"songs with < $ExpectedWindowsPerTrack windows", "-",
-        tracks.filter(col("num_windows") < ExpectedWindowsPerTrack).count().toString),
-      Metric(Stage, s"songs shorter than $MinSamplesForFullTrack samples", "-",
-        tracks.filter(col("track_length") < MinSamplesForFullTrack).count().toString, "explains fewer windows"),
+      Metric(Stage, s"short recordings (< $ExpectedWindowsPerTrack raw windows)", "-", shortRecordings.count().toString,
+        s"track_length < $MinSamplesForFullTrack samples"),
+      Metric(Stage, "tracks trimmed by Cleaning's silence rule", "-", silenceTrimmed.count().toString,
+        s"${silenceTrimmed.agg(sum("windows_removed_by_cleaning")).head.getLong(0)} windows removed total"),
       Metric(Stage, "songs without audio file", "-", tracks.filter(!col("has_audio")).count().toString),
       Metric(Stage, "songs without spectrogram image", "-", tracks.filter(!col("has_image")).count().toString)
     )
