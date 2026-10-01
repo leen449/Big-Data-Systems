@@ -86,7 +86,8 @@ Big-Data-Systems/
 │   │   ├── Integration.scala     # Stage 2: link windows to tracks, build tracks table
 │   │   ├── Reduction.scala       # Stage 3: drop redundant/low-relevance features
 │   │   ├── Transformation.scala  # Stage 4: feature engineering, log transform, label encoding
-│   │   └── RunPreprocessing.scala # Runs stages 1-4 in order and prints a summary
+│   │   ├── RunPreprocessing.scala # Runs stages 1-4 in order and prints a summary
+│   │   └── Phase2Snapshot.scala  # Reporting artifact: 15-row sample of the final dataset, all genres (seed 42)
 │   ├── rdd/                      # Phase 3: RDD analyses
 │   ├── sql/                      # Phase 4: Spark SQL queries
 │   └── ml/                       # Phase 5: ML pipeline and evaluation
@@ -104,6 +105,8 @@ Big-Data-Systems/
 ├── outputs/
 │   ├── stats/                    # Before/after metrics CSV per stage
 │   └── figures/                  # Charts and visualizations
+├── results/                      # Report artifacts (git-ignored like data/ and outputs/; regenerate from code)
+│   └── phase2_snapshot.csv       # 15-row sample of the final dataset, for the Phase 2 report
 └── docs/                         # Project reports
 ```
 
@@ -143,6 +146,11 @@ sbt "runMain sonicspark.preprocessing.Cleaning"
 
 # 5. Inspect a stage's output
 sbt "runMain sonicspark.Peek data/interim/02_integrated"
+
+# 6. Phase 2 report snapshot: 15 rows of the final dataset (all 10 genres, seed 42)
+#    Reads data/processed/final, so step 3 must have run first. Writes a single
+#    human-readable CSV (not a Parquet folder) to results/phase2_snapshot.csv.
+sbt "runMain sonicspark.preprocessing.Phase2Snapshot"
 ```
 
 `HelloSpark` expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100` — this only exercises `features_3_sec.csv` directly and is unrelated to the window-based pipeline below it. `FoundationCheck` verifies both raw CSVs read correctly and survive a Parquet round-trip unchanged.

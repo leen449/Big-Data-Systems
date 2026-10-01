@@ -6,6 +6,7 @@
 # dataset and generated outputs
 data/
 outputs/
+results/
 
 # sbt build artifacts
 target/

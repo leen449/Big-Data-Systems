@@ -36,4 +36,7 @@ object Paths {
   // ---------- Material for the report ----------
   val Stats   = "outputs/stats"
   val Figures = "outputs/figures"
+
+  // ---------- Report artifacts (gitignored like data/ and outputs/; regenerate from code) ----------
+  val Phase2Snapshot = "results/phase2_snapshot.csv"
 }
