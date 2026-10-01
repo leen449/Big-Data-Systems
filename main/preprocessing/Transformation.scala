@@ -35,6 +35,9 @@ object Transformation {
     val rows    = reduced.count()
 
     // ---------- T1: feature engineering ----------
+    // Coefficient of variation of RMS loudness within a window (std/mean):
+    // captures how much the loudness fluctuates frame-to-frame, independent
+    // of how loud the window is overall.
     val engineered = reduced
       .withColumn("loudness_variation", sqrt(col("rms_var")) / col("rms_mean"))
       .cache()
@@ -43,7 +46,17 @@ object Transformation {
 
     // ---------- T2: log transformation of skewed features ----------
     val (skewBefore, minValue) = skewAndMin(engineered, featureCols)
-    val toLog = featureCols.filter(c => skewBefore(c) > SkewThreshold && minValue(c) > 0).toSet
+    // A column is a log candidate if it's right-skewed past the threshold and
+    // never negative -- LogEpsilon alone (not min > 0) is what keeps log(0) safe.
+    val logCandidates = featureCols.filter(c => skewBefore(c) > SkewThreshold && minValue(c) >= 0)
+
+    // Safeguard: only commit to the log version if it's actually less skewed
+    // than the original. Probe each candidate's post-log skewness before
+    // deciding, since log can overcorrect (e.g. loudness_variation).
+    val logProbe = engineered.select(logCandidates.map(c => log(col(c) + LogEpsilon).as(c)): _*)
+    val (skewAfterProbe, _) = skewAndMin(logProbe, logCandidates)
+    val toLog    = logCandidates.filter(c => math.abs(skewAfterProbe(c)) < math.abs(skewBefore(c))).toSet
+    val rejected = logCandidates.filterNot(toLog.contains)
 
     def newName(c: String): String = if (toLog.contains(c)) s"log_$c" else c
 
@@ -70,7 +83,11 @@ object Transformation {
     // ---------- Report 1: skewness before/after ----------
     val skewHeader = Seq("feature", "skew_before", "transformation", "skew_after")
     val skewRows = featureCols.map { c =>
-      Seq(newName(c), f"${skewBefore(c)}%.2f", if (toLog.contains(c)) "log" else "-", f"${skewAfter(newName(c))}%.2f")
+      val transformNote =
+        if (toLog.contains(c)) "log"
+        else if (rejected.contains(c)) "log rejected: did not reduce |skew|"
+        else "-"
+      Seq(newName(c), f"${skewBefore(c)}%.2f", transformNote, f"${skewAfter(newName(c))}%.2f")
     }
     println("\n=== Skewness before and after ===")
     Metrics.showTable(skewHeader, skewRows)
@@ -92,6 +109,8 @@ object Transformation {
         "+ 1 engineered feature + label_idx"),
       Metric(Stage, "T1 engineered features", "-", "1", "loudness_variation"),
       Metric(Stage, "T2 log-transformed features", "-", toLog.size.toString, s"skewness > $SkewThreshold"),
+      Metric(Stage, "T2 rejected by safeguard", logCandidates.size.toString, rejected.size.toString,
+        s"|skew after| >= |skew before|: ${rejected.mkString(", ")}"),
       Metric(Stage, "features with |skewness| > 1", skewedBefore.toString, skewedAfter.toString),
       Metric(Stage, "T3 label encoding", "10 genres", "label_idx 0-9", "alphabetical"),
       Metric(Stage, "T4 scaling", "-", "-", "deferred to ML pipeline: fit on training data only")
