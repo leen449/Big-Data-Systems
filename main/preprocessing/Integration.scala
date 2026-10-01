@@ -98,11 +98,45 @@ object Integration {
       .orderBy("track_id")
       .show(20, truncate = false)
 
-    println("=== Tracks that lost windows to Cleaning's silence rule ===")
+    println("=== Tracks that lost windows to Cleaning (any rule) ===")
     silenceTrimmed
       .select("track_id", "num_raw_windows", "num_windows", "windows_removed_by_cleaning")
       .orderBy("track_id")
       .show(20, truncate = false)
+
+    // ---------- Per-rule breakdown of Cleaning's removals ----------
+    // Cleaning writes only the surviving windows, so the rule that removed a
+    // given window isn't recorded anywhere -- reclassify each removed window
+    // here by re-applying Cleaning's own R1/R2/R3 predicates, in the same
+    // order Cleaning applies them, so the buckets are mutually exclusive and
+    // exactly partition every removed window (no logic change: same
+    // thresholds, same track-id set, imported from Cleaning).
+    val removedWindows = DataIO.readStage(spark, Paths.WindowFeatures)
+      .join(windows.select("track_id", "window_idx"), Seq("track_id", "window_idx"), "left_anti")
+      .withColumn("removal_rule",
+        when(col("rms_mean") < Cleaning.SilenceRmsThreshold, "R1: silence")
+          .when(col("track_id").isin(Cleaning.MislabelledPair.toSeq: _*), "R2: mislabelled pair")
+          .otherwise("R3: duplicate"))
+      .cache()
+
+    val ruleBreakdown = removedWindows
+      .groupBy("removal_rule")
+      .agg(countDistinct("track_id").as("tracks_affected"), count("*").as("windows_removed"))
+      .collect()
+      .map(r => r.getString(0) -> (r.getLong(1), r.getLong(2)))
+      .toMap
+    val rules = Seq("R1: silence", "R2: mislabelled pair", "R3: duplicate")
+    val totalTracksAffected = removedWindows.select("track_id").distinct().count()
+    val totalWindowsRemoved = removedWindows.count()
+
+    println("\n=== Cleaning's removals, by rule ===")
+    Metrics.showTable(
+      Seq("rule", "tracks_affected", "windows_removed"),
+      rules.map { r =>
+        val (tracksAffected, windowsRemoved) = ruleBreakdown.getOrElse(r, (0L, 0L))
+        Seq(r, tracksAffected.toString, windowsRemoved.toString)
+      } :+ Seq("combined total", totalTracksAffected.toString, totalWindowsRemoved.toString)
+    )
 
     println("=== Songs with a missing audio file or image ===")
     tracks.filter(!col("has_audio") || !col("has_image"))
@@ -117,8 +151,12 @@ object Integration {
       Metric(Stage, "label conflicts (window vs song)", "-", conflicts.toString, "window label kept"),
       Metric(Stage, s"short recordings (< $ExpectedWindowsPerTrack raw windows)", "-", shortRecordings.count().toString,
         s"track_length < $MinSamplesForFullTrack samples"),
-      Metric(Stage, "tracks trimmed by Cleaning's silence rule", "-", silenceTrimmed.count().toString,
-        s"${silenceTrimmed.agg(sum("windows_removed_by_cleaning")).head.getLong(0)} windows removed total"),
+    ) ++ rules.map { r =>
+      val (tracksAffected, windowsRemoved) = ruleBreakdown.getOrElse(r, (0L, 0L))
+      Metric(Stage, s"tracks/windows removed by Cleaning's $r", "-", tracksAffected.toString, s"$windowsRemoved windows removed")
+    } ++ Seq(
+      Metric(Stage, "tracks/windows removed by Cleaning (combined)", "-", totalTracksAffected.toString,
+        s"$totalWindowsRemoved windows removed total"),
       Metric(Stage, "songs without audio file", "-", tracks.filter(!col("has_audio")).count().toString),
       Metric(Stage, "songs without spectrogram image", "-", tracks.filter(!col("has_image")).count().toString)
     )
