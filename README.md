@@ -71,6 +71,7 @@ Big-Data-Systems/
 ├── HelloSpark.scala              # Environment sanity check (Spark + RDD)
 ├── FoundationCheck.scala         # Smoke test: CSV read, Parquet round-trip, metrics
 ├── Peek.scala                    # Inspect any stage's Parquet output
+├── explore_all.txt                # Captured output of `sbt "runMain sonicspark.Explore all"`
 ├── main/
 │   ├── Explore.scala             # Ad-hoc exploratory analysis of features_3_sec.csv
 │   ├── common/
