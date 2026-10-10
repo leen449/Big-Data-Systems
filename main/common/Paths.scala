@@ -39,4 +39,9 @@ object Paths {
 
   // ---------- Report artifacts (gitignored like data/ and outputs/; regenerate from code) ----------
   val Phase2Snapshot = "results/phase2_snapshot.csv"
+
+  // ---------- Phase 3 (RDD operations) ----------
+  val RddOutputDir   = "outputs/rdd"                    // one small CSV per analysis
+  val TempoFlagsOutput = "outputs/rdd/tempo_flags"      // Analysis D: flagged tempo-artefact segments
+  val RddReport      = "results/rdd_output.txt"         // full printed report, same content as the console
 }
