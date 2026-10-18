@@ -458,8 +458,8 @@ object RDDOperations {
     // to join against, with no special-casing needed here.
     val joined = windowsKeyed.join(segments)
       .map { case ((trackId, segmentIdx), (window, segment)) => JoinedSegment(trackId, segmentIdx, window.genre, segment.tempo) }
-      // TRANSFORMATION (distinct): a 3-second segment spans 6 half-second-hop windows, all of
-      // which join to the same segment row -- collapse back down to one record per segment.
+      // several windows (usually 6, fewer at the end of a recording or after cleaning)
+// map to the same 3-second segment, so the join repeats each segment record
       .distinct()
       .cache()
 
