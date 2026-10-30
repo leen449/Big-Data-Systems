@@ -9,10 +9,12 @@ import java.nio.file.{Files, Paths => JPaths, StandardOpenOption}
  */
 object Report {
 
-  private val reportPath = JPaths.get(Paths.RddReport)
+  private var reportPath = JPaths.get(Paths.RddReport)
 
-  /** Call once at the start of the program: creates a fresh, empty report file. */
-  def start(): Unit = {
+  /** Call once at the start of the program: creates a fresh, empty report file.
+   *  Defaults to Phase 3's report; pass a different path (e.g. Paths.SqlReport) for Phase 4+. */
+  def start(path: String = Paths.RddReport): Unit = {
+    reportPath = JPaths.get(path)
     Files.createDirectories(reportPath.getParent)
     Files.write(reportPath, Array.emptyByteArray)
   }
@@ -43,11 +45,11 @@ object Report {
     log(sep)
   }
 
-  /** Save a small result table as its own CSV file under outputs/rdd/. */
-  def saveCsv(fileName: String, header: Seq[String], rows: Seq[Seq[String]]): String = {
-    val dir  = JPaths.get(Paths.RddOutputDir)
-    Files.createDirectories(dir)
-    val file = dir.resolve(fileName)
+  /** Save a small result table as its own CSV file under outputs/rdd/ (or `dir`, for Phase 4+). */
+  def saveCsv(fileName: String, header: Seq[String], rows: Seq[Seq[String]], dir: String = Paths.RddOutputDir): String = {
+    val outDir = JPaths.get(dir)
+    Files.createDirectories(outDir)
+    val file = outDir.resolve(fileName)
     val lines = (header +: rows).map(_.map(escape).mkString(","))
     Files.write(file, lines.mkString("\n").getBytes(StandardCharsets.UTF_8))
     file.toString

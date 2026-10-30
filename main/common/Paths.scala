@@ -44,4 +44,9 @@ object Paths {
   val RddOutputDir   = "outputs/rdd"                    // one small CSV per analysis
   val TempoFlagsOutput = "outputs/rdd/tempo_flags"      // Analysis D: flagged tempo-artefact segments
   val RddReport      = "results/rdd_output.txt"         // full printed report, same content as the console
+
+  // ---------- Phase 4 (Spark SQL operations) ----------
+  val SqlOutputDir  = "results/sql"               // one small CSV per query
+  val SqlReport     = "results/sql_output.txt"    // full printed report, same content as the console
+  val SqlResultsCsv = "results/sql_results.csv"   // every query's result, combined in long format
 }
