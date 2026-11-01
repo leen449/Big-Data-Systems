@@ -11,7 +11,7 @@ import sonicspark.common._
 /**
  * Extraction stage: turns raw GTZAN WAV files into the window_features table
  * that replaces features_3_sec.csv as the analytical input for the rest of
- * the pipeline (see CLAUDE.md, "Agreed pipeline").
+ * the agreed pipeline.
  *
  * Covers stages (a)-(e): WAV loading, windowing, time-domain features (RMS,
  * ZCR), spectral features (centroid, bandwidth, roll-off, flatness), MFCC
@@ -34,7 +34,7 @@ object AudioFeatures {
 
   /**
    * One row of the final window_features table: identity columns plus the
-   * full 38 feature columns from CLAUDE.md (time-domain, spectral, MFCC).
+   * full 38 agreed feature columns (time-domain, spectral, MFCC).
    * This is the complete schema; every stage from (b) onward fills in more
    * of it, but the shape was fixed once MFCC (the last feature group) was
    * added in stage (d).
@@ -217,7 +217,7 @@ object AudioFeatures {
   /**
    * Sanity-checks the extraction against librosa's own numbers. Window
    * features are averaged up to 3-second segments (segment_idx = floor
-   * (start_sec / 3), same join key CLAUDE.md defines for window -> segment
+   * (start_sec / 3), same join key agreed for window -> segment
    * joins), matched to the corresponding row of features_3_sec.csv by
    * track_id + segment_idx, and compared via Pearson correlation on RMS
    * and spectral centroid. Exact equality is not expected -- the CSV's
@@ -457,7 +457,7 @@ object AudioFeatures {
   /**
    * Extracts every feature for one window: frames the window, computes each
    * feature per frame, and reduces each to a mean/variance pair across the
-   * frames (as required by CLAUDE.md). hann and melFilterbank are precomputed
+   * frames (per the agreed pipeline). hann and melFilterbank are precomputed
    * and broadcast by the caller.
    *
    * The FFT magnitude spectrum is computed once per frame and reused for

@@ -46,7 +46,7 @@ object Schema {
   private val windowMfccFeatures: Seq[String] =
     (1 to AudioConfig.NumMfcc).flatMap(i => Seq(s"mfcc${i}_mean", s"mfcc${i}_var"))
 
-  /** All 38 window-level audio features, in column order (see CLAUDE.md). */
+  /** All 38 window-level audio features, in the agreed column order. */
   val windowFeatureColumns: Seq[String] = windowPairedFeatures ++ windowMfccFeatures
 
   /** Identity columns of the window_features table, preceding the feature columns. */

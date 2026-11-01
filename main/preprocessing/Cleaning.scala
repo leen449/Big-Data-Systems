@@ -31,7 +31,7 @@ import sonicspark.common._
  * Other quality checks (nulls, label consistency, negative variances) were
  * verified during exploration and required no action. Unlike the earlier
  * CSV-based version of this stage, there is no tempo to sanity-check: tempo
- * is not extracted from the raw audio (see CLAUDE.md).
+ * is not extracted from the raw audio.
  */
 object Cleaning {
 

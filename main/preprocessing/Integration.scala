@@ -9,8 +9,8 @@ import sonicspark.common._
  * Stage 2 of the preprocessing pipeline: INTEGRATION
  *
  * Connects each window to the song (track) it belongs to, and computes the
- * 3-second segment it falls in (segment_idx = floor(start_sec / 3), per
- * CLAUDE.md) so later stages or ad-hoc checks can join back to
+ * 3-second segment it falls in (segment_idx = floor(start_sec / 3)) so
+ * later stages or ad-hoc checks can join back to
  * features_3_sec.csv. track_id is already a column on every window (set
  * during audio extraction), so unlike the CSV-based version of this stage,
  * no filename parsing is needed to find it.

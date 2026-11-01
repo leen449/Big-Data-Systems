@@ -10,10 +10,10 @@ import sonicspark.common._
  *
  * EXPLORATORY ONLY: every query below is descriptive analysis over the already-finished
  * Phase 2 dataset. No result here feeds feature selection, scaling, or model training --
- * Phase 5 must derive its own statistics from the training split only (see CLAUDE.md).
+ * Phase 5 must derive its own statistics from the training split only.
  *
  * Question this file answers: beyond Phase 3's RDD-level profiles, what do genre-level
- * variance structure, recording dynamics, intro/outro position effects, frame-to-frame
+ * variance structure, recording dynamics, position-within-excerpt effects, frame-to-frame
  * stability, segment-level tempo/loudness correlation, and a simple nearest-centroid
  * exploration reveal about how separable GTZAN's 10 genres are?
  *
@@ -33,7 +33,8 @@ object SQLOperations {
   // ======================================================================
   object SqlConfig {
     // Q1: same 6 features as RDDOperations.RddConfig.KeyFeatures, reused here for
-    // cross-phase comparability (4 required by the task + 2 "others you judge useful")
+    // cross-phase comparability: three most genre-relevant spectral features plus
+    // three energy features
     val VarianceFeatures: Seq[String] = Seq(
       "spectral_bandwidth_mean", "mfcc1_mean", "rolloff_mean",
       "loudness_variation", "rms_mean", "zcr_mean"
@@ -43,7 +44,7 @@ object SQLOperations {
     // deterministic and reproducible run to run (same input -> same output)
     val PercentileAccuracy = 10000
 
-    // Q2: the specific recording the task asks us to check under both metrics
+    // Q2: recording with the largest max-min range, checked under both measures
     val Q2CheckTrack = "hiphop.00038"
 
     // Q6: how many off-diagonal (confused) genre pairs to report
@@ -89,11 +90,14 @@ object SQLOperations {
    * and records it into the combined long-format buffer. Returns the collected rows so
    * callers that need a second pass (e.g. Q7's EXPLAIN on Q5) can reuse the SQL text.
    */
-  private def runQuery(spark: SparkSession, queryId: String, question: String, sql: String, csvName: String): Array[Row] = {
+  private def runQuery(spark: SparkSession, queryId: String, question: String, sql: String, csvName: String): Array[Row] =
+    runQueryDf(queryId, question, sql, spark.sql(sql), csvName)
+
+  /** Same as runQuery, but takes an already-built DataFrame (e.g. after na.fill) instead of running sql directly. */
+  private def runQueryDf(queryId: String, question: String, sql: String, df: DataFrame, csvName: String): Array[Row] = {
     Report.log(s"\n--- $queryId: $question ---")
     Report.log(sql)
 
-    val df     = spark.sql(sql)
     val header = df.columns.toSeq
     val rows   = df.collect()
     val strRows = rows.map(rowToStrings).toSeq
@@ -110,7 +114,7 @@ object SQLOperations {
   // ======================================================================
 
   /**
-   * Registers windows / segments / tracks as temporary views, per the task's spec:
+   * Registers windows / segments / tracks as temporary views:
    *   windows  : data/processed/final + segment_idx = FLOOR(start_sec / 3)
    *   segments : features_3_sec.csv (filename, tempo only) parsed to (track_id, segment_idx),
    *              restricted to segments that match at least one cleaned window (inner join)
@@ -386,10 +390,26 @@ object SQLOperations {
   //   (loudness, bandwidth, mfcc1), and how do genres rank against each other?
   // ======================================================================
   def runQ4(spark: SparkSession): Unit = {
+    val excludedPairs = spark.sql(
+      """
+        |WITH deltas AS (
+        |  SELECT track_id, window_idx,
+        |    LAG(window_idx) OVER (PARTITION BY track_id ORDER BY window_idx) AS prev_idx
+        |  FROM windows
+        |)
+        |SELECT COUNT(*) AS n
+        |FROM deltas
+        |WHERE prev_idx IS NOT NULL AND window_idx - prev_idx <> 1
+      """.stripMargin
+    ).head().getAs[Long]("n")
+    Report.log(s"Q4: $excludedPairs consecutive-window pair(s) excluded " +
+      "(predecessor window removed in cleaning, so the pair is not truly consecutive).")
+
     val sql =
       s"""
          |WITH deltas AS (
          |  SELECT track_id, label AS genre, window_idx,
+         |    LAG(window_idx) OVER (PARTITION BY track_id ORDER BY window_idx) AS prev_idx,
          |    ABS(20 * LOG10(rms_mean + ${AudioConfig.Epsilon})
          |        - LAG(20 * LOG10(rms_mean + ${AudioConfig.Epsilon})) OVER (PARTITION BY track_id ORDER BY window_idx)) AS d_loudness,
          |    ABS(spectral_bandwidth_mean
@@ -404,7 +424,8 @@ object SQLOperations {
          |    ROUND(AVG(d_bandwidth), 4) AS mean_abs_change_bandwidth,
          |    ROUND(AVG(d_mfcc1), 4) AS mean_abs_change_mfcc1
          |  FROM deltas
-         |  WHERE d_loudness IS NOT NULL  -- drops each track's first window (no predecessor)
+         |  WHERE d_loudness IS NOT NULL        -- drops each track's first window (no predecessor)
+         |    AND window_idx - prev_idx = 1     -- drops pairs whose predecessor was removed in cleaning (not truly consecutive)
          |  GROUP BY genre
          |)
          |SELECT genre, mean_abs_change_loudness, mean_abs_change_bandwidth, mean_abs_change_mfcc1,
@@ -424,7 +445,8 @@ object SQLOperations {
   // ======================================================================
   // Q5: Three-level join (windows join segments join tracks)
   //   Question: at the 3-second-segment level, how correlated is loudness variation with tempo,
-  //   overall and per genre -- using both Pearson and a doubling-robust Spearman rank version?
+  //   overall and per genre -- using both Pearson and a Spearman rank correlation (less
+  //   sensitive to extreme tempo values)?
   // ======================================================================
   val Q5JoinSql: String =
     """
@@ -450,11 +472,17 @@ object SQLOperations {
     val sql =
       """
         |WITH ranked AS (
+        |  -- average ranks (not RANK()'s minimum rank) for ties, as required by Spearman --
+        |  -- tempo only has 61 distinct values, so ties are common
         |  SELECT *,
-        |    RANK() OVER (ORDER BY avg_loudness_variation) AS rank_loudness,
-        |    RANK() OVER (ORDER BY tempo) AS rank_tempo,
-        |    RANK() OVER (PARTITION BY genre ORDER BY avg_loudness_variation) AS rank_loudness_genre,
-        |    RANK() OVER (PARTITION BY genre ORDER BY tempo) AS rank_tempo_genre
+        |    RANK() OVER (ORDER BY avg_loudness_variation)
+        |      + (COUNT(*) OVER (PARTITION BY avg_loudness_variation) - 1) / 2.0 AS rank_loudness,
+        |    RANK() OVER (ORDER BY tempo)
+        |      + (COUNT(*) OVER (PARTITION BY tempo) - 1) / 2.0 AS rank_tempo,
+        |    RANK() OVER (PARTITION BY genre ORDER BY avg_loudness_variation)
+        |      + (COUNT(*) OVER (PARTITION BY genre, avg_loudness_variation) - 1) / 2.0 AS rank_loudness_genre,
+        |    RANK() OVER (PARTITION BY genre ORDER BY tempo)
+        |      + (COUNT(*) OVER (PARTITION BY genre, tempo) - 1) / 2.0 AS rank_tempo_genre
         |  FROM q5_joined
         |)
         |SELECT genre,
@@ -474,7 +502,8 @@ object SQLOperations {
 
     runQuery(spark, "Q5",
       "At the 3-second-segment level, how correlated is average loudness variation with tempo " +
-        "(Pearson, and Spearman via ranks to guard against tempo-doubling artefacts), per genre and overall?",
+        "(Pearson, and Spearman rank correlation, which is less sensitive to extreme tempo " +
+        "values), per genre and overall?",
       sql, "q5_loudness_tempo_corr.csv")
   }
 
@@ -583,9 +612,11 @@ object SQLOperations {
          |ORDER BY true_genre ASC
       """.stripMargin
 
-    runQuery(spark, "Q6_confusion",
+    // Genre pairs with zero recordings land as null cells from the pivot; fill with 0 so every cell is a count.
+    val pivotDf = spark.sql(pivotSql).na.fill(0)
+    runQueryDf("Q6_confusion",
       "(exploratory, not a model) For each true genre, how many recordings land nearest to each genre's z-scored centroid?",
-      pivotSql, "q6_confusion_pivot.csv")
+      pivotSql, pivotDf, "q6_confusion_pivot.csv")
 
     val selfShareSql =
       """
