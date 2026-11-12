@@ -126,7 +126,11 @@ Big-Data-Systems/
 │   ├── rdd_output.txt            # Full Phase 3 report (console output mirrored to file)
 │   ├── sql_output.txt            # Full Phase 4 report (console output mirrored to file)
 │   ├── sql/                      # Phase 4: one result CSV per query (q1_*.csv ... q6_*.csv)
-│   └── sql_results.csv           # Phase 4: every query's result, combined in one long-format CSV
+│   ├── sql_results.csv           # Phase 4: every query's result, combined in one long-format CSV
+│   ├── ml_metrics.txt            # Full Phase 5 report (console output mirrored to file)
+│   └── ml/                       # Phase 5: split.csv, relevance/CV/metrics/confusion CSVs, etc.
+├── notes/
+│   └── phase5_report_material.md # Phase 5 oral Q&A prep: key numbers, code snippets, explanations
 └── docs/                         # Project reports
 ```
 
@@ -188,7 +192,8 @@ sbt "runMain sonicspark.sql.SQLOperations"
 #    RandomForest vs. a majority-class baseline and a nearest-centroid baseline). Reads
 #    data/processed/final (every step) and data/interim/02_integrated (train recordings
 #    only, for the Phase 2 selection recheck), so step 3 must have run first.
-#    Writes results/ml_metrics.txt and results/ml/*.csv. Budget 40-70 minutes.
+#    Writes results/ml_metrics.txt and results/ml/*.csv. Measured runtime ~85-90 minutes
+#    in local[3] mode with a 4g heap (see build.sbt) -- budget accordingly.
 sbt "runMain sonicspark.ml.MachineLearning"
 ```
 
