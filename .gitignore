@@ -1,7 +1,9 @@
 # local editor metadata
 .metals/
 .bloop/
+.bsp/
 .idea/
+.vscode/
 
 # dataset and generated outputs
 data/
@@ -11,6 +13,7 @@ results/
 # sbt build artifacts
 target/
 project/target/
+project/project/
 
 # optional logs / caches
 *.log

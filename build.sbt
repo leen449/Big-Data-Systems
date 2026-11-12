@@ -33,8 +33,10 @@ lazy val root = (project in file("."))
 
     // Memory limit for Spark. Audio feature extraction over the full 1,000-file
     // corpus needs more headroom than the CSV-based stages; lower to 2g if this
-    // machine doesn't have it free.
-    run / javaOptions += "-Xmx3g",
+    // machine doesn't have it free. Phase 5's RandomForest grid (up to 200 trees,
+    // depth 15, refit repeatedly across a long single-JVM run) needs more still --
+    // raised to 4g after an OutOfMemoryError during the grouped out-of-fold loop.
+    run / javaOptions += "-Xmx4g",
 
     // Required for Spark 3.5 to run on Java 17
     run / javaOptions ++= Seq(

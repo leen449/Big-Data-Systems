@@ -49,4 +49,8 @@ object Paths {
   val SqlOutputDir  = "results/sql"               // one small CSV per query
   val SqlReport     = "results/sql_output.txt"    // full printed report, same content as the console
   val SqlResultsCsv = "results/sql_results.csv"   // every query's result, combined in long format
+
+  // ---------- Phase 5 (Machine Learning) ----------
+  val MlOutputDir = "results/ml"                  // split.csv, cv_results.csv, confusion_*.csv, etc.
+  val MlReport    = "results/ml_metrics.txt"      // full printed report, same content as the console
 }
