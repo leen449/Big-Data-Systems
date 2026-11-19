@@ -134,6 +134,19 @@ Big-Data-Systems/
 └── docs/                         # Project reports
 ```
 
+### Handout submission-name mapping
+
+The course handout names five submission files. This is what each one corresponds to
+in this repository:
+
+| Handout name | Location in this repo |
+|---|---|
+| `code/01_DataPreprocessing.scala` | `main/preprocessing/` (entry point: `RunPreprocessing.scala`) |
+| `code/02_RDDOperations.scala` | `main/rdd/RDDOperations.scala` |
+| `code/03_SQLOperations.scala` | `main/sql/SQLOperations.scala` |
+| `code/04_MachineLearning.scala` | `main/ml/` (entry point: `MachineLearning.scala`) |
+| `code/utility_functions.scala` | `main/common/` |
+
 ## Getting Started
 
 ### Requirements
@@ -195,6 +208,14 @@ sbt "runMain sonicspark.sql.SQLOperations"
 #    Writes results/ml_metrics.txt and results/ml/*.csv. Measured runtime ~85-90 minutes
 #    in local[3] mode with a 4g heap (see build.sbt) -- budget accordingly.
 sbt "runMain sonicspark.ml.MachineLearning"
+
+# 10. Phase 5 audit utility: TransformRecheck (train-only re-check of Phase 2's
+#     log-transform decision, item C4 of the Phase 5 audit). Not part of the modelling
+#     pipeline. Reads data/interim/03_reduced, results/ml/split.csv (train/test
+#     assignment, so step 9 must have run first), and outputs/stats/04_skewness.csv
+#     (Phase 2's own full-dataset decision, for comparison). Writes
+#     results/ml/phase2_transform_recheck.txt.
+sbt "runMain sonicspark.ml.TransformRecheck"
 ```
 
 `HelloSpark` expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100` — this only exercises `features_3_sec.csv` directly and is unrelated to the window-based pipeline below it. `FoundationCheck` verifies both raw CSVs read correctly and survive a Parquet round-trip unchanged.
