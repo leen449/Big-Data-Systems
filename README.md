@@ -216,6 +216,23 @@ sbt "runMain sonicspark.ml.MachineLearning"
 #     (Phase 2's own full-dataset decision, for comparison). Writes
 #     results/ml/phase2_transform_recheck.txt.
 sbt "runMain sonicspark.ml.TransformRecheck"
+
+# 11. Phase 5 audit utility: ReductionRecheck (train-only re-check of Phase 2's
+#     Reduction feature-selection rule, closing the remaining half of item C4 of the
+#     Phase 5 audit). Not part of the modelling pipeline. Reads
+#     data/interim/02_integrated, filtered to the training recordings in
+#     results/ml/split.csv (so step 9 must have run first). Re-runs Reduction's exact
+#     eta^2 (R1) + correlation (R2) rule on training rows only, reusing
+#     FeatureAnalysis's existing eta^2/correlation methods unchanged. Appends to
+#     results/ml/phase2_selection_recheck.txt.
+sbt "runMain sonicspark.ml.ReductionRecheck"
+
+# 12. Phase 5 audit utility: PcaRecheck (reports k, the number of principal components
+#     the PCA-whitened centroid baseline keeps -- Baselines.scala computes k but never
+#     logs it). Not part of the modelling pipeline; no change to Baselines.scala. Reads
+#     data/processed/final and results/ml/split.csv (train/test assignment and
+#     cv_fold, so step 9 must have run first). Writes results/ml/pca_components.txt.
+sbt "runMain sonicspark.ml.PcaRecheck"
 ```
 
 `HelloSpark` expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100` — this only exercises `features_3_sec.csv` directly and is unrelated to the window-based pipeline below it. `FoundationCheck` verifies both raw CSVs read correctly and survive a Parquet round-trip unchanged.
