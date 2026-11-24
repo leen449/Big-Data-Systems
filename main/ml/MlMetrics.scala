@@ -104,8 +104,10 @@ object MlMetrics {
     (handComputed, sparkComputed)
   }
 
-  /** Prints and saves one model/level/set's metrics: summary line, per-class table, confusion matrix. */
-  def reportMetrics(name: String, result: MetricsResult, genres: Seq[String]): Unit = {
+  /** Prints and saves one model/level/set's metrics: summary line, per-class table, confusion matrix.
+   *  `outputDir` defaults to Phase 5's own results/ml so every existing call site (MachineLearning.scala)
+   *  is byte-for-byte unaffected; Phase 6's FollowUpExperiments passes results/ml_followup instead. */
+  def reportMetrics(name: String, result: MetricsResult, genres: Seq[String], outputDir: String = Paths.MlOutputDir): Unit = {
     Report.log(s"\n--- $name ---")
     Report.log(f"accuracy=${result.accuracy}%.4f  macroF1=${result.macroF1}%.4f  weightedF1=${result.weightedF1}%.4f")
 
@@ -113,12 +115,12 @@ object MlMetrics {
     val perClassRows = result.perClass.map(c =>
       Seq(c.genre, f"${c.precision}%.4f", f"${c.recall}%.4f", f"${c.f1}%.4f", c.support.toString))
     Report.table(perClassHeader, perClassRows)
-    Report.saveCsv(s"per_class_$name.csv", perClassHeader, perClassRows, Paths.MlOutputDir)
+    Report.saveCsv(s"per_class_$name.csv", perClassHeader, perClassRows, outputDir)
 
     val confHeader = "true_genre" +: genres
     val confRows = genres.zipWithIndex.map { case (g, i) => g +: result.confusion(i).map(_.toString).toSeq }
     Report.log(s"Confusion matrix ($name), rows = true genre, columns = predicted genre:")
     Report.table(confHeader, confRows)
-    Report.saveCsv(s"confusion_$name.csv", confHeader, confRows, Paths.MlOutputDir)
+    Report.saveCsv(s"confusion_$name.csv", confHeader, confRows, outputDir)
   }
 }

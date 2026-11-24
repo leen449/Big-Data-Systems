@@ -68,9 +68,6 @@ Big-Data-Systems/
 │   └── build.properties          # sbt version
 ├── AUTHORS.md                    # Project team and credits
 ├── README.md                     # Project readme (this file)
-├── HelloSpark.scala              # Environment sanity check (Spark + RDD)
-├── FoundationCheck.scala         # Smoke test: CSV read, Parquet round-trip, metrics
-├── Peek.scala                    # Inspect any stage's Parquet output
 ├── explore_all.txt                # Captured output of `sbt "runMain sonicspark.Explore all"`
 ├── main/
 │   ├── Explore.scala             # Ad-hoc exploratory analysis of features_3_sec.csv
@@ -105,7 +102,14 @@ Big-Data-Systems/
 │       ├── ModelTraining.scala   # Pipeline, grouped CrossValidator search, grouped OOF loop
 │       ├── MlMetrics.scala       # Soft/majority voting, accuracy/F1/confusion, sanity check
 │       ├── Interpretation.scala  # RF importances, LR coefficients, genre-pair check, centroid sums
-│       └── MachineLearning.scala # Orchestrator: sbt "runMain sonicspark.ml.MachineLearning"
+│       ├── MachineLearning.scala # Phase 5 orchestrator: sbt "runMain sonicspark.ml.MachineLearning"
+│       ├── FollowUpConfig.scala  # Phase 6: constants for Parts A-C (own file, MlConfig stays frozen)
+│       ├── FollowUpCvUtils.scala # Phase 6: shared split reload + candidate-ranking rule
+│       ├── FollowUpPartA.scala   # Phase 6, Part A: CV candidates re-ranked by recording-level OOF score
+│       ├── FollowUpPartB.scala   # Phase 6, Part B: classifier on one-row-per-recording summaries
+│       ├── FollowUpStats.scala   # Phase 6, Part C: paired bootstrap CI + exact McNemar test
+│       ├── FollowUpPartC.scala   # Phase 6, Part C: paired comparison on the test recordings
+│       └── FollowUpExperiments.scala # Phase 6 orchestrator: sbt "runMain sonicspark.ml.FollowUpExperiments"
 ├── data/                         # Local data only (git-ignored)
 │   ├── raw/                      # Original Kaggle files (CSVs, audio, images)
 │   ├── sample/                   # ~11 WAV files (1/genre + the corrupt jazz file) for quick testing
@@ -128,9 +132,11 @@ Big-Data-Systems/
 │   ├── sql/                      # Phase 4: one result CSV per query (q1_*.csv ... q6_*.csv)
 │   ├── sql_results.csv           # Phase 4: every query's result, combined in one long-format CSV
 │   ├── ml_metrics.txt            # Full Phase 5 report (console output mirrored to file)
-│   └── ml/                       # Phase 5: split.csv, relevance/CV/metrics/confusion CSVs, etc.
-├── notes/
-│   └── phase5_report_material.md # Phase 5 oral Q&A prep: key numbers, code snippets, explanations
+│   ├── ml/                       # Phase 5: split.csv, relevance/CV/metrics/confusion CSVs, etc.
+│   ├── ml_followup_metrics.txt   # Full Phase 6 report (console output mirrored to file)
+│   └── ml_followup/              # Phase 6: cv_recording_level.csv, summary model CSVs,
+│                                  # test_predictions_recording.csv, pairwise_comparison.csv, etc.
+├── notes/                        # Local oral Q&A prep (not part of the submission)
 └── docs/                         # Project reports
 ```
 
@@ -144,7 +150,7 @@ in this repository:
 | `code/01_DataPreprocessing.scala` | `main/preprocessing/` (entry point: `RunPreprocessing.scala`) |
 | `code/02_RDDOperations.scala` | `main/rdd/RDDOperations.scala` |
 | `code/03_SQLOperations.scala` | `main/sql/SQLOperations.scala` |
-| `code/04_MachineLearning.scala` | `main/ml/` (entry point: `MachineLearning.scala`) |
+| `code/04_MachineLearning.scala` | `main/ml/MachineLearning.scala` (Phase 5) + `main/ml/FollowUpExperiments.scala` (Phase 6 follow-up, see below) |
 | `code/utility_functions.scala` | `main/common/` |
 
 ## Getting Started
@@ -166,78 +172,77 @@ git clone https://github.com/leen449/Big-Data-Systems.git
 cd Big-Data-Systems
 # place the Kaggle files in data/raw/
 
-# 1. Setup checks
-sbt "runMain sonicspark.HelloSpark"          # reads features_3_sec.csv directly; unrelated to the window pipeline below
-sbt "runMain sonicspark.FoundationCheck"
-
-# 2. Audio feature extraction: raw WAV -> window_features
+# 1. Audio feature extraction: raw WAV -> window_features
 sbt "runMain sonicspark.preprocessing.AudioFeatures"                         # quick test on data/sample (~11 files)
 sbt "runMain sonicspark.preprocessing.AudioFeatures data/raw/genres_original" # full corpus: ~1 hour, writes data/interim/00_window_features
 
-# 3. Full preprocessing pipeline (Cleaning -> Integration -> Reduction -> Transformation)
-#    Reads data/interim/00_window_features, so step 2 (full corpus) must have run first.
+# 2. Full preprocessing pipeline (Cleaning -> Integration -> Reduction -> Transformation)
+#    Reads data/interim/00_window_features, so step 1 (full corpus) must have run first.
 sbt "runMain sonicspark.preprocessing.RunPreprocessing"
 
-# 4. Run a single stage on its own
+# 3. Run a single stage on its own
 sbt "runMain sonicspark.preprocessing.Cleaning"
 
-# 5. Inspect a stage's output
-sbt "runMain sonicspark.Peek data/interim/02_integrated"
-
-# 6. Phase 2 report snapshot: 15 rows of the final dataset (all 10 genres, seed 42)
-#    Reads data/processed/final, so step 3 must have run first. Writes a single
+# 4. Phase 2 report snapshot: 15 rows of the final dataset (all 10 genres, seed 42)
+#    Reads data/processed/final, so step 2 must have run first. Writes a single
 #    human-readable CSV (not a Parquet folder) to results/phase2_snapshot.csv.
 sbt "runMain sonicspark.preprocessing.Phase2Snapshot"
 
-# 7. Phase 3: RDD operations (genre profiles, dynamics, genre similarity, tempo join)
-#    Reads data/processed/final and data/raw/features_3_sec.csv, so step 3 must have run first.
+# 5. Phase 3: RDD operations (genre profiles, dynamics, genre similarity, tempo join)
+#    Reads data/processed/final and data/raw/features_3_sec.csv, so step 2 must have run first.
 #    Writes outputs/rdd/*.csv, outputs/rdd/tempo_flags/, and results/rdd_output.txt.
 sbt "runMain sonicspark.rdd.RDDOperations"
 
-# 8. Phase 4: Spark SQL operations (variance decomposition, robust dynamic range, position
+# 6. Phase 4: Spark SQL operations (variance decomposition, robust dynamic range, position
 #    effect, temporal stability, a 3-level join correlating loudness variation with tempo,
 #    and a nearest-centroid confusion analysis). Exploratory only -- feeds nothing into Phase 5.
-#    Reads data/processed/final and data/raw/features_3_sec.csv, so step 3 must have run first.
+#    Reads data/processed/final and data/raw/features_3_sec.csv, so step 2 must have run first.
 #    Writes results/sql_output.txt, results/sql/q*.csv, and results/sql_results.csv.
 sbt "runMain sonicspark.sql.SQLOperations"
 
-# 9. Phase 5: Machine learning (track-level split, grouped 5-fold CV, LogisticRegression +
+# 7. Phase 5: Machine learning (track-level split, grouped 5-fold CV, LogisticRegression +
 #    RandomForest vs. a majority-class baseline and a nearest-centroid baseline). Reads
 #    data/processed/final (every step) and data/interim/02_integrated (train recordings
-#    only, for the Phase 2 selection recheck), so step 3 must have run first.
+#    only, for the Phase 2 selection recheck), so step 2 must have run first.
 #    Writes results/ml_metrics.txt and results/ml/*.csv. Measured runtime ~85-90 minutes
 #    in local[3] mode with a 4g heap (see build.sbt) -- budget accordingly.
 sbt "runMain sonicspark.ml.MachineLearning"
 
-# 10. Phase 5 audit utility: TransformRecheck (train-only re-check of Phase 2's
-#     log-transform decision, item C4 of the Phase 5 audit). Not part of the modelling
-#     pipeline. Reads data/interim/03_reduced, results/ml/split.csv (train/test
-#     assignment, so step 9 must have run first), and outputs/stats/04_skewness.csv
-#     (Phase 2's own full-dataset decision, for comparison). Writes
-#     results/ml/phase2_transform_recheck.txt.
+# 8. Phase 5 audit utility: TransformRecheck (train-only re-check of Phase 2's
+#    log-transform decision, item C4 of the Phase 5 audit). Not part of the modelling
+#    pipeline. Reads data/interim/03_reduced, results/ml/split.csv (train/test
+#    assignment, so step 7 must have run first), and outputs/stats/04_skewness.csv
+#    (Phase 2's own full-dataset decision, for comparison). Writes
+#    results/ml/phase2_transform_recheck.txt.
 sbt "runMain sonicspark.ml.TransformRecheck"
 
-# 11. Phase 5 audit utility: ReductionRecheck (train-only re-check of Phase 2's
-#     Reduction feature-selection rule, closing the remaining half of item C4 of the
-#     Phase 5 audit). Not part of the modelling pipeline. Reads
-#     data/interim/02_integrated, filtered to the training recordings in
-#     results/ml/split.csv (so step 9 must have run first). Re-runs Reduction's exact
-#     eta^2 (R1) + correlation (R2) rule on training rows only, reusing
-#     FeatureAnalysis's existing eta^2/correlation methods unchanged. Appends to
-#     results/ml/phase2_selection_recheck.txt.
+# 9. Phase 5 audit utility: ReductionRecheck (train-only re-check of Phase 2's
+#    Reduction feature-selection rule, closing the remaining half of item C4 of the
+#    Phase 5 audit). Not part of the modelling pipeline. Reads
+#    data/interim/02_integrated, filtered to the training recordings in
+#    results/ml/split.csv (so step 7 must have run first). Re-runs Reduction's exact
+#    eta^2 (R1) + correlation (R2) rule on training rows only, reusing
+#    FeatureAnalysis's existing eta^2/correlation methods unchanged. Appends to
+#    results/ml/phase2_selection_recheck.txt.
 sbt "runMain sonicspark.ml.ReductionRecheck"
 
-# 12. Phase 5 audit utility: PcaRecheck (reports k, the number of principal components
+# 10. Phase 5 audit utility: PcaRecheck (reports k, the number of principal components
 #     the PCA-whitened centroid baseline keeps -- Baselines.scala computes k but never
 #     logs it). Not part of the modelling pipeline; no change to Baselines.scala. Reads
 #     data/processed/final and results/ml/split.csv (train/test assignment and
-#     cv_fold, so step 9 must have run first). Writes results/ml/pca_components.txt.
+#     cv_fold, so step 7 must have run first). Writes results/ml/pca_components.txt.
 sbt "runMain sonicspark.ml.PcaRecheck"
+
+# 11. Phase 6: follow-up experiments (CV re-ranked by recording-level score, a model
+#     trained on recording-level summaries, paired test-set comparison). Reads
+#     data/processed/final and results/ml/split.csv/cv_results.csv, so step 7 must
+#     have run first. Does not change any Phase 5 output. Writes
+#     results/ml_followup_metrics.txt and results/ml_followup/*.csv. See
+#     "Follow-up experiments (Phase 6)" below for details and runtime.
+sbt "runMain sonicspark.ml.FollowUpExperiments"
 ```
 
-`HelloSpark` expected output: `Rows: 9990 | Columns: 60`, a genre count table, and `RDD check (should be 10100): 10100` — this only exercises `features_3_sec.csv` directly and is unrelated to the window-based pipeline below it. `FoundationCheck` verifies both raw CSVs read correctly and survive a Parquet round-trip unchanged.
-
-Every pipeline stage (`AudioFeatures`, `Cleaning`, `Integration`, `Reduction`, `Transformation`) writes its output as a **Parquet folder** under `data/interim/` or `data/processed/`, not a CSV. Use `Peek <path>` to inspect the row count, schema, and a sample of any of these folders.
+Every pipeline stage (`AudioFeatures`, `Cleaning`, `Integration`, `Reduction`, `Transformation`) writes its output as a **Parquet folder** under `data/interim/` or `data/processed/`, not a CSV.
 
 > **Windows users:** Spark requires `winutils.exe` and `hadoop.dll` in `%HADOOP_HOME%\bin`.
 
@@ -297,7 +302,29 @@ Source: `results/sql_output.txt`, `results/sql/*.csv`, and `results/sql_results.
 | Logistic Regression | 0.7027 | 0.7045 | regParam=0.001, feature set F3 (+range +change) |
 | Random Forest | 0.6824 | 0.6845 | numTrees=150, maxDepth=12, feature set F2 (+change) |
 
-Source: `results/ml_metrics.txt` and `results/ml/*.csv`, generated by `MachineLearning`. Full detail (window-level, train-set, out-of-fold, per-class precision/recall/F1, confusion matrices, feature importances, and LR coefficients) is in those files; `notes/phase5_report_material.md` has the key numbers, code snippets, and plain-language explanations prepared for the oral Q&A.
+Source: `results/ml_metrics.txt` and `results/ml/*.csv`, generated by `MachineLearning`. Full detail (window-level, train-set, out-of-fold, per-class precision/recall/F1, confusion matrices, feature importances, and LR coefficients) is in those files.
+
+### Follow-up experiments (Phase 6)
+
+A separate, post-hoc program -- `FollowUpExperiments.scala` -- that never changes Phase 5's own output, built around three questions Phase 5 left open:
+
+- **Part A** re-ranks Phase 5's 20 CV candidates (LR regParam x feature set, RF feature set, RF numTrees x maxDepth) by grouped out-of-fold **recording-level** macro-F1 instead of Spark's window-level weighted-F1 -- the metric the headline numbers are actually judged on. If the new rule picks a different configuration than Phase 5 did, that model is refit and evaluated on the test set once.
+- **Part B** trains a classifier directly on one row per recording (mean + stddev of each of the 38 window features, plus Phase 5's 4 candidate features) instead of voting window-level predictions together, to see whether that does better than the window models or the PCA-whitened centroid baseline.
+- **Part C** regenerates Phase 5's own recording-level test predictions (never saved by Phase 5, only aggregated metrics were), checks them against `results/ml_metrics.txt` to 4 decimals, and runs a paired bootstrap 95% CI + exact McNemar test for every pair of models on the same 296 test recordings -- sharper than comparing two standalone accuracy numbers.
+
+**Run:**
+```bash
+sbt "runMain sonicspark.ml.FollowUpExperiments"            # all three parts
+sbt "runMain sonicspark.ml.FollowUpExperiments --part A"   # one part only (Part C reads
+sbt "runMain sonicspark.ml.FollowUpExperiments --part B"   #   Part A/B's saved CSVs if
+sbt "runMain sonicspark.ml.FollowUpExperiments --part C"   #   present)
+```
+
+**Inputs:** `data/processed/final`, `results/ml/split.csv` (the Phase 5 split/fold assignment, read back unchanged -- never recomputed), `results/ml/cv_results.csv` (Phase 5's own CV scores, for comparison and for recovering its exact final configurations).
+
+**Outputs:** `results/ml_followup_metrics.txt` (full printed report) and `results/ml_followup/` (`cv_recording_level.csv`, the Part B summary-model CSVs, `test_predictions_recording.csv`, `pairwise_comparison.csv`, etc.) and `results/ml_followup/summary_for_report.md` (plain-markdown tables for the write-up).
+
+**Runtime:** same local[3] / 4g-heap settings as Phase 5. Part A is the dominant cost (grouped 5-fold OOF fits for all 20 candidates, including the RandomForest grid) at roughly 45-75 minutes; Parts B and C are much cheaper (688-986 rows, not tens of thousands of windows) at a few minutes each.
 
 ## Team
 

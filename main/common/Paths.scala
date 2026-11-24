@@ -53,4 +53,8 @@ object Paths {
   // ---------- Phase 5 (Machine Learning) ----------
   val MlOutputDir = "results/ml"                  // split.csv, cv_results.csv, confusion_*.csv, etc.
   val MlReport    = "results/ml_metrics.txt"      // full printed report, same content as the console
+
+  // ---------- Phase 5 follow-up experiments (post-hoc, does not change Phase 5's own output) ----------
+  val MlFollowupOutputDir = "results/ml_followup"           // cv_recording_level.csv, test_predictions_recording.csv, etc.
+  val MlFollowupReport    = "results/ml_followup_metrics.txt" // full printed report, same content as the console
 }
